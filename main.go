@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"image"
 	"image/gif"
-	"image/png"
 	"image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,10 +52,12 @@ type App struct {
 	selectedFile string
 	statusLabel  *widget.Label
 	convertBtn   *widget.Button
+	previewCard  *widget.Card
+	previewImage *widget.Icon
 }
 
 func main() {
-	myApp := app.New()
+	myApp := app.NewWithID("com.emoteconverter.app")
 	myApp.SetIcon(nil)
 	
 	w := myApp.NewWindow("Emote Size Converter")
@@ -63,10 +65,13 @@ func main() {
 	w.CenterOnScreen()
 
 	converter := &App{
-		window:      w,
-		statusLabel: widget.NewLabel("No file selected"),
-		convertBtn:  widget.NewButton("Convert & Save Bundle", nil),
+		window:       w,
+		statusLabel:  widget.NewLabel("No file selected"),
+		convertBtn:   widget.NewButton("Convert & Save", nil),
+		previewImage: widget.NewIcon(nil),
 	}
+
+	converter.previewCard = widget.NewCard("Preview", "", converter.previewImage)
 
 	converter.convertBtn.Disable()
 	converter.setupUI()
@@ -75,7 +80,7 @@ func main() {
 }
 
 func (a *App) setupUI() {
-	title := widget.NewCard("Emote Size Converter", "", 
+	title := widget.NewCard("Emote Converter", "", 
 		widget.NewLabel("Convert images to Discord, Twitch, and 7TV emote sizes"))
 
 	selectBtn := widget.NewButton("Select Image File", a.selectFile)
@@ -84,21 +89,11 @@ func (a *App) setupUI() {
 	a.convertBtn.OnTapped = a.convertAndSave
 	a.convertBtn.Importance = widget.HighImportance
 
-	// Create info about supported formats
-	formatInfo := widget.NewCard("Supported Formats", "", 
-		widget.NewLabel("JPEG, PNG, GIF, WebP, WebM"))
-
-	// Create size info
-	sizeInfo := widget.NewRichTextFromMarkdown(`**Target Sizes:**
-- Discord: 28x28, 32x32, 48x48, 128x128
-- Twitch: 28x28, 56x56, 112x112  
-- 7TV: 32x32, 64x64, 96x96, 128x128`)
-
 	buttonContainer := container.NewHBox(selectBtn, a.convertBtn)
 	
 	content := container.NewVBox(
 		title,
-		container.NewHBox(formatInfo, sizeInfo),
+		a.previewCard, // Add preview card
 		widget.NewSeparator(),
 		buttonContainer,
 		a.statusLabel,
@@ -127,18 +122,20 @@ func (a *App) selectFile() {
 			".jpeg": true,
 			".png":  true,
 			".gif":  true,
-			".webp": true,
-			".webm": true,
 		}
 
 		if !validExts[ext] {
-			a.showError("Invalid file type", fmt.Errorf("please select a JPEG, PNG, GIF, WebP, or WebM file"))
+			a.showError("Invalid file type", fmt.Errorf("please select a JPEG, PNG, or GIF file"))
 			return
 		}
 
 		a.selectedFile = uri.Path()
 		filename := filepath.Base(a.selectedFile)
 		a.statusLabel.SetText(fmt.Sprintf("Selected: %s", filename))
+		
+		// Load and show preview
+		a.loadPreview()
+		
 		a.convertBtn.Enable()
 
 	}, a.window)
@@ -188,11 +185,6 @@ func (a *App) processImage() error {
 		img, err = png.Decode(file)
 	case ".gif":
 		img, err = gif.Decode(file)
-	case ".webp":
-		img, err = webp.Decode(file)
-	case ".webm":
-		// WebM is video format, but we'll try to decode as image
-		img, _, err = image.Decode(file)
 	default:
 		img, _, err = image.Decode(file)
 	}
@@ -230,6 +222,31 @@ func (a *App) processImage() error {
 	}
 
 	return nil
+}
+
+func (a *App) loadPreview() {
+	if a.selectedFile == "" {
+		return
+	}
+
+	// Load image as resource
+	resource, err := fyne.LoadResourceFromPath(a.selectedFile)
+	if err != nil {
+		a.statusLabel.SetText(fmt.Sprintf("Selected file (preview failed): %s", filepath.Base(a.selectedFile)))
+		return
+	}
+
+	// Set the image and show preview
+	a.previewImage.SetResource(resource)
+	
+	// Set the preview image size to 256x256
+	a.previewImage.Resize(fyne.NewSize(256, 256))
+	
+	a.previewCard.Show()
+	a.previewCard.Refresh()
+	
+	// Resize window to accommodate larger preview
+	// a.window.Resize(fyne.NewSize(600, 550))
 }
 
 func (a *App) showError(title string, err error) {
